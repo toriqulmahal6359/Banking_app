@@ -22,10 +22,35 @@ use App\Http\Controllers\TransactionController;
 //     return $request->user();
 // });
 
-Route::post('/login', [AuthController::class, 'login']);
+// Route::post('/login', [AuthController::class, 'login']);
+// Route::post('/users', [UserController::class, 'store']);
+
+// Route::middleware(['jwt.auth'])->group(function(){
+//     Route::get('/', [TransactionController::class, 'index']);
+//     Route::get('/deposit', [TransactionController::class, 'deposit']);
+//     Route::post('/deposit', [TransactionController::class, 'storeDeposit']);
+//     Route::get('/withdrawal', [TransactionController::class, 'withdrawal']);
+//     Route::post('/withdrawal', [TransactionController::class, 'storeWithdrawal']);
+// });
+
+Route::middleware('auth:api')->get('/user', function (Request $request) {
+    return $request->user();
+});
+
 Route::post('/users', [UserController::class, 'store']);
 
-Route::middleware(['jwt.auth'])->group(function(){
+Route::group([
+    'middleware' => 'api',
+    'namespace' => '\App\Http\Controllers',
+    'prefix' => 'auth'
+], function($router){
+    Route::post('/login', [AuthController::class, 'login']);
+});
+
+Route::group([
+    'middleware' => 'api',
+    'namespace' => '\App\Http\Controllers'
+], function(){
     Route::get('/', [TransactionController::class, 'index']);
     Route::get('/deposit', [TransactionController::class, 'deposit']);
     Route::post('/deposit', [TransactionController::class, 'storeDeposit']);

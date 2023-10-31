@@ -11,16 +11,24 @@ use Carbon\Carbon;
 
 class TransactionController extends Controller
 {
+
+    protected $user;
+
+    public function __construct(){
+        $this->middleware('auth:api');
+        $this->user = $this->guard()->user();
+    }
+
     public function index()
     {
         // Get the authenticated user
-        $user = Auth::user();
+        // $user = Auth::user();
 
         // Get all transactions for the user
-        $transactions = Transaction::where('user_id', $user->id)->get();
+        $transactions = Transaction::where('user_id', $this->user->id)->get();
 
         // Calculate the current balance
-        $currentBalance = $user->balance - $transactions->sum('amount');
+        $currentBalance = $this->user->balance - $transactions->sum('amount');
 
         return response()->json(['transactions' => $transactions, 'current_balance' => $currentBalance]);
     }
@@ -28,10 +36,10 @@ class TransactionController extends Controller
     public function deposit(Request $request)
     {
         // Get the authenticated user
-        $user = Auth::user();
+        // $user = Auth::user();
 
         // Get all deposit transactions for the user
-        $depositTransactions = Transaction::where('user_id', $user->id)->where('transaction_type', 'deposit')->get();
+        $depositTransactions = Transaction::where('user_id', $this->user->id)->where('transaction_type', 'deposit')->get();
 
         return response()->json(['deposit_transactions' => $depositTransactions]);
     }
@@ -40,41 +48,45 @@ class TransactionController extends Controller
     {
 
         // Validate input
-        $request->validate([
+        // $request->validate([
+        //     'amount' => 'required|numeric|min:1',
+        // ]);
+        
+        $validator = Validator::make($request->all(), [
             'amount' => 'required|numeric|min:1',
         ]);
-
         // Get the authenticated user
-        $user = Auth::user();
+        // $user = Auth::user();
 
-        if ($validator->fails()) {
+        if($validator->fails()){
             return response()->json(['message' => 'Validation failed', 'errors' => $validator->errors()], 400);
         }
 
-        try {
+        // try {
             // Attempt to authenticate the user using JWT token
-            $user = JWTAuth::parseToken()->authenticate();
-        } catch (\Tymon\JWTAuth\Exceptions\TokenExpiredException $e) {
-            return response()->json(['message' => 'Token expired'], 401);
-        } catch (\Tymon\JWTAuth\Exceptions\TokenInvalidException $e) {
-            return response()->json(['message' => 'Token invalid'], 401);
-        } catch (\Tymon\JWTAuth\Exceptions\JWTException $e) {
-            return response()->json(['message' => 'Token absent'], 401);
-        }
+        //     $user = JWTAuth::parseToken()->authenticate();
+        // } catch (\Tymon\JWTAuth\Exceptions\TokenExpiredException $e) {
+        //     return response()->json(['message' => 'Token expired'], 401);
+        // } catch (\Tymon\JWTAuth\Exceptions\TokenInvalidException $e) {
+        //     return response()->json(['message' => 'Token invalid'], 401);
+        // } catch (\Tymon\JWTAuth\Exceptions\JWTException $e) {
+        //     return response()->json(['message' => 'Token absent'], 401);
+        // }
 
         // Create a new deposit transaction
+        $amount = $request->input('amount');
         $transaction = new Transaction([
-            'user_id' => $user->id,
+            'user_id' => $this->user->id,
             'transaction_type' => 'deposit',
-            'amount' => $request->input('amount'),
+            'amount' => $amount,
             'fee' => 0, // No fee for deposits
             'date' => now(),
         ]);
         $transaction->save();
 
         // Update the user's balance
-        $user->balance += $request->input('amount');
-        $user->save();
+        $this->user->balance += $request->input('amount');
+        $this->user->save();
 
         return response()->json(['message' => 'Deposit successful', 'transaction' => $transaction]);
     }
@@ -82,10 +94,10 @@ class TransactionController extends Controller
     public function withdrawal(Request $request)
     {
         // Get the authenticated user
-        $user = Auth::user();
+        // $user = Auth::user();
 
         // Get all withdrawal transactions for the user
-        $withdrawalTransactions = Transaction::where('user_id', $user->id)->where('transaction_type', 'withdrawal')->get();
+        $withdrawalTransactions = Transaction::where('user_id', $this->user->id)->where('transaction_type', 'withdrawal')->get();
 
         return response()->json(['withdrawal_transactions' => $withdrawalTransactions]);
     }
@@ -98,15 +110,15 @@ class TransactionController extends Controller
         ]);
 
         // Get the authenticated user
-        $user = Auth::user();
+        // $user = Auth::user();
 
         // Calculate withdrawal fee based on account type
-        $accountType = $user->account_type;
+        $accountType = $this->user->account_type;
         $withdrawalFee = ($accountType === 'Individual') ? $request->input('amount') * 0.00015 : $request->input('amount') * 0.00025;
 
         // Check for free withdrawal conditions for Individual accounts
         $isFriday = Carbon::now()->dayOfWeek === Carbon::FRIDAY;
-        $monthlyWithdrawalAmount = Transaction::where('user_id', $user->id)
+        $monthlyWithdrawalAmount = Transaction::where('user_id', $this->user->id)
             ->where('transaction_type', 'withdrawal')
             ->whereMonth('date', Carbon::now()->month)
             ->sum('amount');
@@ -121,10 +133,10 @@ class TransactionController extends Controller
         $totalAmountToDeduct = $request->input('amount') + $withdrawalFee;
 
         // Check if the user has enough balance for the withdrawal
-        if ($user->balance >= $totalAmountToDeduct) {
+        if ($this->user->balance >= $totalAmountToDeduct) {
             // Create a new withdrawal transaction
             $transaction = new Transaction([
-                'user_id' => $user->id,
+                'user_id' => $this->user->id,
                 'transaction_type' => 'withdrawal',
                 'amount' => -$totalAmountToDeduct, // Withdrawals are negative values
                 'fee' => $withdrawalFee,
@@ -133,12 +145,16 @@ class TransactionController extends Controller
             $transaction->save();
 
             // Update the user's balance
-            $user->balance -= $totalAmountToDeduct;
-            $user->save();
+            $this->user->balance -= $totalAmountToDeduct;
+            $this->user->save();
 
             return response()->json(['message' => 'Withdrawal successful', 'transaction' => $transaction]);
         } else {
             return response()->json(['message' => 'Insufficient balance for withdrawal'], 400);
         }
+    }
+
+    protected function guard(){
+        return Auth::guard();
     }
 }
